@@ -1,0 +1,52 @@
+debug = true
+
+#Integrations
+[[apps.integrations]]
+file_pattern = ".*-windows-x86-64\\.exe$"
+install_args = "/VERYSILENT /ALLUSERS"
+name = "LocalSend"
+repo = "localsend/localsend"
+type = "github"
+
+[[apps.integrations]]
+file_pattern = ".*\\.msixbundle$"
+name = "Sefirah"
+repo = "shrimqy/Sefirah"
+type = "github"
+
+#Utilities
+[[apps.utilities]]
+file_pattern = ".*\\.msixbundle$"
+name = "NanaZip"
+repo = "M2Team/NanaZip"
+type = "github"
+
+#Office
+[[apps.office]]
+get_url_function = """
+    function Get-Url {
+        $LibreOfficeUri = [uri]::new( 'https://libreoffice.org/download/download/?type=win-x86_64' );
+        $LibreOfficeHTML = Invoke-WebRequest -Uri $LibreOfficeUri -UseBasicParsing
+        $LibreOfficeVerPattern = '(?s)class="dl_outer_green_box".*?<span class="dl_version_number">(.*?)</span>'
+        $LibreOfficeVer = [regex]::Match($LibreOfficeHTML.Content, $LibreOfficeVerPattern).Groups[1].Value
+        $LibreOfficeDlUri = [uri]::new( "https://download.documentfoundation.org/libreoffice/stable/$($LibreOfficeVer)/win/x86_64/LibreOffice_$($LibreOfficeVer)_Win_x86-64.msi" );
+        return $LibreOfficeDlUri
+    }
+"""
+name = "Libre Office"
+type = "website"
+
+#Browsers ()
+[[selectable_apps.browsers]]
+file_pattern = "zen\\.installer\\.exe"
+install_args = "/S"
+name = "Zen"
+repo = "zen-browser/desktop"
+selected = true
+type = "github"
+
+[[selectable_apps.browsers]]
+file_pattern = "BraveBrowserStandaloneSilentSetup.exe"
+name = "Brave"
+repo = "brave/brave-browser"
+type = "github"
