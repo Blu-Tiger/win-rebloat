@@ -17,11 +17,12 @@ function Win-Rebloat {
         $OptionalSelect = $null
     )
 
-    try {
-        if ($null -eq $Config) {
-            $Config = Get-Content -Path $ConfigPath -Raw
-         }
+    
+    if ($null -eq $Config){
+        $Config = Get-Content -Path $ConfigPath -Raw
+    }
 
+    try {
         try {
             $configObject = $Config | ConvertFrom-Json -AsHashtable -ErrorAction Stop
             Write-Host "Configuration string parsed as JSON." -ForegroundColor DarkGray
@@ -29,13 +30,18 @@ function Win-Rebloat {
             $appsCategList = $configObject.apps.keys
         }
         catch {
-            Write-Host "JSON parsing failed, attempting to parse as TOML." -ForegroundColor DarkGray
             if (-not (Get-Module -ListAvailable -Name "PSToml")) {
                 Write-Output "Installing PSToml module..."
                 Install-Module PSToml -Scope CurrentUser -Force -Confirm:$false
             }
             Import-Module PSToml
-            $configObject = ConvertFrom-Toml $Config
+            try {
+                $configObject = ConvertFrom-Toml $Config -ErrorAction Stop
+            }
+            catch {
+                Throw "Unsupported configuration format!"
+            }
+            Write-Host "Configuration string parsed as TOML." -ForegroundColor DarkGray
             $selectableAppsCategList = $configObject.selectable_apps.PSObject.ImmediateBaseObject.keys
             $appsCategList = $configObject.apps.PSObject.ImmediateBaseObject.keys
         }
