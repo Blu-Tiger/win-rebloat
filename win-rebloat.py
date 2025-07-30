@@ -5,7 +5,8 @@ import tempfile
 import requests
 import subprocess
 import re
-import toml
+import json
+
 
 def optional_select_parser(optional_select):
     """
@@ -25,6 +26,7 @@ def optional_select_parser(optional_select):
             parsed[group] = []
     return parsed
 
+
 def generate_partial_file_path(app, dl_dir):
     """_summary_
     Generate the temp file path without the extension
@@ -36,6 +38,7 @@ def generate_partial_file_path(app, dl_dir):
     part_file_path = os.path.join(dl_dir, name)
     return part_file_path
 
+
 def download_from_github(app, part_file_path):
     """
     Download from a github repo
@@ -45,8 +48,10 @@ def download_from_github(app, part_file_path):
         response = requests.get(url, headers={"User-Agent": "Python"})
         response.raise_for_status()
         data = response.json()
-        assets = data.get('assets', [])
-        files_to_download = [a for a in assets if re.search(app['file_pattern'], a['name'])]
+        assets = data.get("assets", [])
+        files_to_download = [
+            a for a in assets if re.search(app["file_pattern"], a["name"])
+        ]
         if not files_to_download:
             print(f"No files matched the pattern '{app['file_pattern']}'.")
             return None
@@ -65,6 +70,7 @@ def download_from_github(app, part_file_path):
         print(f"Error occurred: {e}", file=sys.stderr)
         return None
 
+
 def download_from_website(app, part_file_path):
     """
     Executes the provided PowerShell function (as a string) in app['get_url_function']
@@ -77,10 +83,14 @@ def download_from_website(app, part_file_path):
         Get-Url
         """
         completed = subprocess.run(
-            ['powershell', '-NoProfile', '-Command', ps_command],
-            capture_output=True, text=True, check=True
+            ["powershell", "-NoProfile", "-Command", ps_command],
+            capture_output=True,
+            text=True,
+            check=True,
         )
-        file_url = completed.stdout.strip().splitlines()[-1]  # Get the last line output as URL
+        file_url = completed.stdout.strip().splitlines()[
+            -1
+        ]  # Get the last line output as URL
         orig_file_name = os.path.basename(file_url)
         file_path = part_file_path + os.path.splitext(orig_file_name)[1]
         print(f"Downloading '{orig_file_name}' from '{file_url}'...")
@@ -94,11 +104,13 @@ def download_from_website(app, part_file_path):
         print(f"Error occurred: {e}", file=sys.stderr)
         return None
 
+
 def msi_installer(file_path):
     try:
         subprocess.run(['msiexec.exe', '/i', file_path, '/qn'], check=True)
     except Exception as e:
         print(f"Error occurred: {e}", file=sys.stderr)
+
 
 def exe_installer(file_path, app):
     try:
@@ -111,43 +123,70 @@ def exe_installer(file_path, app):
     except Exception as e:
         print(f"Error occurred: {e}", file=sys.stderr)
 
+
 def msixbundle_installer(file_path):
     try:
-        subprocess.run([
-            'powershell', '-Command',
-            f'Add-AppxProvisionedPackage -Online -PackagePath "{file_path}" -SkipLicense'
-        ], check=True)
+        subprocess.run(
+            [
+                "powershell",
+                "-Command",
+                f'Add-AppxProvisionedPackage -Online -PackagePath "{file_path}" -SkipLicense',
+            ],
+            check=True,
+        )
     except Exception as e:
         print(f"Error occurred: {e}", file=sys.stderr)
 
-def win_rebloat(config_path="./config.toml", get_info=False, get_info_object=False, config=None, optional_select=None):
+
+def win_rebloat(
+    config_path="./config.toml",
+    get_info=False,
+    get_object_config=False,
+    get_json_config=False,
+    config=None,
+    optional_select=None,
+):
     """Install all the deault apps and the selected apps
 
     Args:
-        config_path (str, optional): Path to the toml configuration file. Defaults to "./config.toml".
-        get_info (bool, optional): Get info about the aviable apps from the configuration.
-        get_info_object (bool, optional): Get info about the aviable apps from the configuration as dictionary.
-        config (_type_, optional): String containing the configuration when not using a configuration file.
-        optional_select (_type_, optional): String that select the desired apps from the selection list.
+        config_path (str, optional): Path to the config file. Defaults to "./config.toml".
+        get_info (bool, optional): Show available apps in human-readable format.
+        get_object_config (bool, optional): Output config as Python object.
+        get_json_config (bool, optional): Output config as JSON string.
+        config (str, optional): Raw config content when not using file.
+        optional_select (str, optional): Selection string for optional apps.
     """
-    
     # Load config
     try:
-        if config is not None:
-            config_object = toml.loads(config)
-        else:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config_object = toml.load(f)
+        content = config
+        if content is None:
+            with open(config_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+        try:
+            config_object = json.loads(content)
+            print("Configuration parsed as JSON", file=sys.stderr)
+        except json.JSONDecodeError:
+            try:
+                import toml
+
+                config_object = toml.loads(content)
+                print("Configuration parsed as TOML", file=sys.stderr)
+            except toml.TomlDecodeError as e:
+                raise RuntimeError("Unsupported configuration format!")
+
         apps = config_object.get('apps', {})
         selectable_apps = config_object.get('selectable_apps', {})
-        debug = config_object.get('debug', False)
+        app_categories = list(apps.keys())
+        selectable_categories = list(selectable_apps.keys())
+
         if optional_select is not None:
             parsed_select = optional_select_parser(optional_select)
         else:
             parsed_select = None
 
-        # Set selected flags in selectable_apps
-        for app_categ, app_list in selectable_apps.items():
+        for app_categ in selectable_categories:
+            app_list = selectable_apps[app_categ]
             if parsed_select and app_categ in parsed_select:
                 for app in app_list:
                     app['selected'] = False
@@ -167,7 +206,8 @@ def win_rebloat(config_path="./config.toml", get_info=False, get_info_object=Fal
     if get_info:
         print("\n=== Available Bloatware ===\n")
         print("\n= Defaults =\n")
-        for app_categ, app_list in apps.items():
+        for app_categ in app_categories:
+            app_list = apps[app_categ]
             if len(app_list) == 0:
                 print("  No applications available.")
                 continue
@@ -175,8 +215,10 @@ def win_rebloat(config_path="./config.toml", get_info=False, get_info_object=Fal
             for app in app_list:
                 print(f"    - {app['name']}")
             print()
+
         print("\n= Selectable =\n")
-        for app_categ, app_list in selectable_apps.items():
+        for app_categ in selectable_categories:
+            app_list = selectable_apps[app_categ]
             if len(app_list) == 0:
                 print("  No applications available.")
                 continue
@@ -189,18 +231,25 @@ def win_rebloat(config_path="./config.toml", get_info=False, get_info_object=Fal
             print()
         return
 
-    if get_info_object:
+    if get_object_config:
         import pprint
+
         pprint.pprint(config_object)
         return
 
-    temp = os.path.join(tempfile.gettempdir(), "rebloat")
+    if get_json_config:
+        print(json.dumps(config_object, indent=2))
+        return
+
+    # Installation process
+    temp = os.path.join(tempfile.gettempdir(), 'rebloat')
     if not os.path.exists(temp):
         os.makedirs(temp)
         print(f"Folder created: {temp}")
 
     # Install default apps
-    for app_categ, app_list in apps.items():
+    for app_categ in app_categories:
+        app_list = apps[app_categ]
         if len(app_list) == 0:
             print(f"No applications available for category '{app_categ}'.")
             continue
@@ -228,7 +277,8 @@ def win_rebloat(config_path="./config.toml", get_info=False, get_info_object=Fal
                 print(f"Unknown install file type: '{ext}'", file=sys.stderr)
 
     # Install selectable apps
-    for app_categ, app_list in selectable_apps.items():
+    for app_categ in selectable_categories:
+        app_list = selectable_apps[app_categ]
         if len(app_list) == 0:
             print(f"No applications available for category '{app_categ}'.")
             continue
@@ -267,19 +317,34 @@ def win_rebloat(config_path="./config.toml", get_info=False, get_info_object=Fal
     else:
         print("No temporary files to clean up.")
 
+
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser(description="Win-Rebloat Python Port")
-    parser.add_argument('--config-path', type=str, default="./config.toml", help="Path to config.toml")
-    parser.add_argument('--get-info', action='store_true', help="Show available apps")
-    parser.add_argument('--get-info-object', action='store_true', help="Show config object")
-    parser.add_argument('--optional-select', type=str, help="Optional select string")
+    parser.add_argument(
+        "--config", type=str, default=None, help="Raw configuration string"
+    )
+    parser.add_argument(
+        "--config-path", type=str, default="./config.toml", help="Path to config file"
+    )
+    parser.add_argument("--get-info", action="store_true", help="Show available apps")
+    parser.add_argument(
+        "--get-object-config",
+        action="store_true",
+        help="Output config as Python object",
+    )
+    parser.add_argument(
+        "--get-json-config", action="store_true", help="Output config as JSON"
+    )
+    parser.add_argument("--optional-select", type=str, help="Optional select string")
     args = parser.parse_args()
 
     win_rebloat(
         config_path=args.config_path,
         get_info=args.get_info,
-        get_info_object=args.get_info_object,
-        config=None,
-        optional_select=args.optional_select
+        get_object_config=args.get_object_config,
+        get_json_config=args.get_json_config,
+        config=args.config,
+        optional_select=args.optional_select,
     )
