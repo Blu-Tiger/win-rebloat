@@ -372,4 +372,6 @@ function MSIXBundle-Installer {
     }
 }
 
-Win-Rebloat -GetObjectConfig:$GetObjectConfig -GetJsonConfig:$GetJsonConfig -GetInfo:$GetInfo -ConfigPath:$ConfigPath -Config:$Config -OptionalSelect:$OptionalSelect
+if ($MyInvocation.ScriptName -eq $PSCommandPath) {
+    Win-Rebloat -GetObjectConfig:$GetObjectConfig -GetJsonConfig:$GetJsonConfig -GetInfo:$GetInfo -ConfigPath:$ConfigPath -Config:$Config -OptionalSelect:$OptionalSelect
+}
