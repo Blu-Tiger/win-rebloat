@@ -1,7 +1,8 @@
 param (
     [string]$ConfigPath = ".\config.toml",
     [switch]$GetInfo,
-    [switch]$GetInfoObject,
+    [switch]$GetObjectConfig,
+    [switch]$GetJsonConfig,
     $Config = $null,
     $OptionalSelect = $null
 )
@@ -9,27 +10,34 @@ param (
 function Win-Rebloat {
     param (
         [switch]$GetInfo,
-        [switch]$GetInfoObject,
+        [switch]$GetObjectConfig,
+        [switch]$GetJsonConfig,
         [string]$ConfigPath = ".\config.toml",
         $Config = $null,
         $OptionalSelect = $null
     )
 
-    if (-not (Get-Module -ListAvailable -Name "PSToml")) {
-        Write-Output "Istalling PSToml..."
-        Install-Module PSToml -Scope CurrentUser -Force
-    }
-
-    Import-Module PSToml
-
-    $temp = Join-Path -Path $env:TEMP -ChildPath "rebloat"
-
     try {
-        if ($null -ne $Config) {
-            $configObject = ConvertFrom-Toml $Config
+        if ($null -eq $Config) {
+            $Config = Get-Content -Path $ConfigPath -Raw
+         }
+
+        try {
+            $configObject = $Config | ConvertFrom-Json -AsHashtable -ErrorAction Stop
+            Write-Host "Configuration string parsed as JSON." -ForegroundColor DarkGray
+            $selectableAppsCategList = $configObject.selectable_apps.keys
+            $appsCategList = $configObject.apps.keys
         }
-        else {
-            $configObject = ConvertFrom-Toml (Get-Content -Path $ConfigPath)
+        catch {
+            Write-Host "JSON parsing failed, attempting to parse as TOML." -ForegroundColor DarkGray
+            if (-not (Get-Module -ListAvailable -Name "PSToml")) {
+                Write-Output "Installing PSToml module..."
+                Install-Module PSToml -Scope CurrentUser -Force -Confirm:$false
+            }
+            Import-Module PSToml
+            $configObject = ConvertFrom-Toml $Config
+            $selectableAppsCategList = $configObject.selectable_apps.PSObject.ImmediateBaseObject.keys
+            $appsCategList = $configObject.apps.PSObject.ImmediateBaseObject.keys
         }
 
         $apps = $configObject.apps
@@ -39,13 +47,14 @@ function Win-Rebloat {
             $parsedSelect = Optional-Select-Parser $OptionalSelect
         }
 
-        foreach ($appCateg in $selectableApps.PSObject.ImmediateBaseObject.keys) {
+
+        foreach ($appCateg in $selectableAppsCategList) {
             if ($null -ne $parsedSelect -and $parsedSelect.ContainsKey($appCateg)) {
-                foreach ($app in $selectableApps[$appCateg]) {
+                foreach ($app in $selectableApps.$appCateg) {
                     $app.selected = $false
                 }
                 foreach ($select in $parsedSelect[$appCateg]) {
-                    foreach ($app in $selectableApps[$appCateg]) {
+                    foreach ($app in $selectableApps.$appCateg) {
                         if ($select.ToLower() -eq $app.name.ToLower()) {
                             $app.selected = $true
                         }
@@ -53,18 +62,13 @@ function Win-Rebloat {
                 }
             }
             else {
-                foreach ($app in $selectableApps[$appCateg]) {
+                foreach ($app in $selectableApps.$appCateg) {
                     if ($null -eq $app.selected) {
                         $app.selected = $false
                     }
                 }
             }
         }
-
-        if ($configObject.debug) {
-            Write-Host "`n== DEBUG MODE ENABLED ==`n" -ForegroundColor Yellow
-        }
-
     }
     catch {
         Write-Error "Failed to load config: $_"
@@ -76,14 +80,14 @@ function Win-Rebloat {
 
         Write-Host "`n= Defaults =`n" -ForegroundColor Magenta
 
-        foreach ($appCateg in $apps.PSObject.ImmediateBaseObject.keys) {
-            if ($apps[$appCateg].Count -eq 0) {
+        foreach ($appCateg in $appsCategList) {
+            if ($apps.$appCateg.Count -eq 0) {
                 Write-Host "  No applications available." -ForegroundColor Red
                 continue
             }
 
             Write-Host ($appCateg.Substring(0, 1).ToUpper() + $appCateg.Substring(1) + ":") -ForegroundColor Green
-            foreach ($app in $apps[$appCateg]) {
+            foreach ($app in $apps.$appCateg) {
                 Write-Host "    - $($app.name)"
             }
             Write-Host ""
@@ -91,15 +95,15 @@ function Win-Rebloat {
 
         Write-Host "`n= Selectable =`n" -ForegroundColor Magenta
 
-        foreach ($appCateg in $selectableApps.PSObject.ImmediateBaseObject.keys) {
-            if ($selectableApps[$appCateg].Count -eq 0) {
+        foreach ($appCateg in $selectableAppsCategList) {
+            if ($selectableApps.$appCateg.Count -eq 0) {
                 Write-Host "  No applications available." -ForegroundColor Red
                 continue
             }
 
             Write-Host ($appCateg.Substring(0, 1).ToUpper() + $appCateg.Substring(1) + ":") -ForegroundColor DarkGreen
 
-            foreach ($app in $selectableApps[$appCateg]) {
+            foreach ($app in $selectableApps.$appCateg) {
                 if ($null -ne $app.selected -and $app.selected -eq $true) {
                     Write-Host "    - $($app.name) (selected)" -ForegroundColor Yellow
                 }
@@ -109,28 +113,36 @@ function Win-Rebloat {
             }
             Write-Host ""
         }
+
         return
     }
 
-    if ($GetInfoObject) {
+    if ($GetObjectConfig) {
         Write-Output $configObject
+        return
+    }
+
+    if ($GetJsonConfig) {
+        Write-Output $configObject | ConvertTo-Json -Depth 10
         return
     }
 
     #Installation process
 
+    $temp = Join-Path -Path $env:TEMP -ChildPath "rebloat"
+
     if (-not (Test-Path -Path $temp)) {
         New-Item -Path $temp -ItemType Directory
         Write-Host "Folder created: $temp"
-    } 
+    }
 
-    foreach ($appCateg in $apps.PSObject.ImmediateBaseObject.keys) {
-        if ($apps[$appCateg].Count -eq 0) {
+    foreach ($appCateg in $appsCategList) {
+        if ($apps.$appCateg.Count -eq 0) {
             Write-Host "No applications available for category '$appCateg'." -ForegroundColor Red
             continue
         }
 
-        foreach ($app in $apps[$appCateg]) {
+        foreach ($app in $apps.$appCateg) {
             $PartFilePath = Generate-PartialFilePath -App $app -DlDir $temp
 
             if ($app.type -eq "github") {
@@ -161,13 +173,13 @@ function Win-Rebloat {
         
     }
 
-    foreach ($appCateg in $selectableApps.PSObject.ImmediateBaseObject.keys) {
-        if ($selectableApps[$appCateg].Count -eq 0) {
+    foreach ($appCateg in $selectableAppsCategList) {
+        if ($selectableApps.$appCateg.Count -eq 0) {
             Write-Host "No applications available for category '$appCateg'." -ForegroundColor Red
             continue
         }
 
-        foreach ($app in $selectableApps[$appCateg]) {
+        foreach ($app in $selectableApps.$appCateg) {
             if ($app.selected -ne $true) {
                 continue
             }
@@ -293,7 +305,7 @@ function Download-From-Github {
     catch {
         Write-Error "Error occurred: $_"
     }
-} 
+}
 
 function Download-From-Website {
     param (
@@ -354,4 +366,4 @@ function MSIXBundle-Installer {
     }
 }
 
-Win-Rebloat -GetInfoObject:$GetInfoObject -GetInfo:$GetInfo -ConfigPath:$ConfigPath -Config:$Config -OptionalSelect:$OptionalSelect
+Win-Rebloat -GetObjectConfig:$GetObjectConfig -GetJsonConfig:$GetJsonConfig -GetInfo:$GetInfo -ConfigPath:$ConfigPath -Config:$Config -OptionalSelect:$OptionalSelect
