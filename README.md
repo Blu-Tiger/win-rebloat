@@ -172,6 +172,7 @@ When using win-rebloat.ps1 as a library (e.g., calling its functions from anothe
   (Categories and apps are colon-separated; groups are comma-separated.)
 *Usage example:*
 ```powershell
+. .\win-rebloat.ps1
 Win-Rebloat -ConfigPath "custom.toml" -OptionalSelect "browser:firefox"
 ```
 
