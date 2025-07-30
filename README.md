@@ -48,9 +48,7 @@ This repository provides:
 By default, WinRe:Bloat installs (examples; update as needed):
 - Default:
   - Integrations: LocalSend, Sefirah.
-  - Editors: VS Code, Notepad++
   - Utilities: 7NanaZip.
-  - Media: VLC, Audacity
   - Office: LibreOffice.
 - Selectable:
   - Browsers: Firefox, Brave.
